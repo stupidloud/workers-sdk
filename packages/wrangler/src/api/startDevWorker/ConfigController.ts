@@ -12,6 +12,7 @@ import {
 } from "../../dev";
 import { getClassNamesWhichUseSQLite } from "../../dev/class-names-sqlite";
 import { getLocalPersistencePath } from "../../dev/get-local-persistence-path";
+import { getDockerPath } from "../../environment-variables/misc-variables";
 import { UserError } from "../../errors";
 import { getFlag } from "../../experimental-flags";
 import { logger, runWithLogLevel } from "../../logger";
@@ -127,12 +128,15 @@ async function resolveDevConfig(
 			httpsKeyPath: input.dev?.server?.httpsKeyPath,
 			httpsCertPath: input.dev?.server?.httpsCertPath,
 		},
-		inspector: {
-			port:
-				input.dev?.inspector?.port ??
-				config.dev.inspector_port ??
-				(await getInspectorPort()),
-		},
+		inspector:
+			input.dev?.inspector === false
+				? false
+				: {
+						port:
+							input.dev?.inspector?.port ??
+							config.dev.inspector_port ??
+							(await getInspectorPort()),
+					},
 		origin: {
 			secure:
 				input.dev?.origin?.secure ?? config.dev.upstream_protocol === "https",
@@ -146,6 +150,11 @@ async function resolveDevConfig(
 		bindVectorizeToProd: input.dev?.bindVectorizeToProd ?? false,
 		multiworkerPrimary: input.dev?.multiworkerPrimary,
 		imagesLocalMode: input.dev?.imagesLocalMode ?? false,
+		experimentalMixedMode:
+			input.dev?.experimentalMixedMode ?? getFlag("MIXED_MODE"),
+		enableContainers:
+			input.dev?.enableContainers ?? config.dev.enable_containers,
+		dockerPath: input.dev?.dockerPath ?? getDockerPath(),
 	} satisfies StartDevWorkerOptions["dev"];
 }
 
@@ -153,27 +162,33 @@ async function resolveBindings(
 	config: Config,
 	input: StartDevWorkerInput
 ): Promise<{ bindings: StartDevWorkerOptions["bindings"]; unsafe?: CfUnsafe }> {
-	const bindings = getBindings(config, input.env, !input.dev?.remote, {
-		kv: extractBindingsOfType("kv_namespace", input.bindings),
-		vars: Object.fromEntries(
-			extractBindingsOfType("plain_text", input.bindings).map((b) => [
-				b.binding,
-				b.value,
-			])
-		),
-		durableObjects: extractBindingsOfType(
-			"durable_object_namespace",
-			input.bindings
-		),
-		r2: extractBindingsOfType("r2_bucket", input.bindings),
-		services: extractBindingsOfType("service", input.bindings),
-		d1Databases: extractBindingsOfType("d1", input.bindings),
-		ai: extractBindingsOfType("ai", input.bindings)?.[0],
-		version_metadata: extractBindingsOfType(
-			"version_metadata",
-			input.bindings
-		)?.[0],
-	});
+	const bindings = getBindings(
+		config,
+		input.env,
+		!input.dev?.remote,
+		{
+			kv: extractBindingsOfType("kv_namespace", input.bindings),
+			vars: Object.fromEntries(
+				extractBindingsOfType("plain_text", input.bindings).map((b) => [
+					b.binding,
+					b.value,
+				])
+			),
+			durableObjects: extractBindingsOfType(
+				"durable_object_namespace",
+				input.bindings
+			),
+			r2: extractBindingsOfType("r2_bucket", input.bindings),
+			services: extractBindingsOfType("service", input.bindings),
+			d1Databases: extractBindingsOfType("d1", input.bindings),
+			ai: extractBindingsOfType("ai", input.bindings)?.[0],
+			version_metadata: extractBindingsOfType(
+				"version_metadata",
+				input.bindings
+			)?.[0],
+		},
+		input.dev?.experimentalMixedMode
+	);
 
 	const maskedVars = maskVars(bindings, config);
 
@@ -423,7 +438,7 @@ function resolveContainerConfig(
 			image: container.image ?? container.configuration.image,
 			maxInstances: container.max_instances,
 			imageBuildContext: container.image_build_context,
-			exposedPorts: container.dev_exposed_ports,
+			name: container.name,
 		};
 	}
 	return containers;
