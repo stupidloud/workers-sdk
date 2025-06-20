@@ -6,14 +6,14 @@ import {
 } from "@cloudflare/cli";
 import { processArgument } from "@cloudflare/cli/args";
 import { brandColor, dim } from "@cloudflare/cli/colors";
-import { UserError } from "../../errors";
-import { pollRegistriesUntilCondition } from "../cli";
 import {
 	ApiError,
 	ImageRegistriesService,
 	ImageRegistryAlreadyExistsError,
 	ImageRegistryNotAllowedError,
-} from "../client";
+} from "@cloudflare/containers-shared";
+import { UserError } from "../../errors";
+import { pollRegistriesUntilCondition } from "../cli";
 import {
 	checkEverythingIsSet,
 	handleFailure,
@@ -27,7 +27,7 @@ import type {
 	CommonYargsArgvSanitizedJSON,
 	StrictYargsOptionsToInterfaceJSON,
 } from "../../yargs-types";
-import type { ImageRegistryPermissions } from "../client";
+import type { ImageRegistryPermissions } from "@cloudflare/containers-shared";
 
 function configureImageRegistryOptionalYargs(yargs: CommonYargsArgvJSON) {
 	return yargs
@@ -68,6 +68,7 @@ export const registriesCommand = (yargs: CommonYargsArgvJSON) => {
 			(args) => configureImageRegistryOptionalYargs(args),
 			(args) =>
 				handleFailure(
+					`wrangler cloudchamber registries configure`,
 					async (
 						imageArgs: StrictYargsOptionsToInterfaceJSON<
 							typeof configureImageRegistryOptionalYargs
@@ -119,6 +120,7 @@ export const registriesCommand = (yargs: CommonYargsArgvJSON) => {
 				// we don't want any kind of spinners
 				args.json = true;
 				return handleFailure(
+					`wrangler cloudchamber registries credentials`,
 					async (
 						imageArgs: StrictYargsOptionsToInterfaceJSON<
 							typeof credentialsImageRegistryYargs
@@ -154,6 +156,7 @@ export const registriesCommand = (yargs: CommonYargsArgvJSON) => {
 			(args) => {
 				args.json = true;
 				return handleFailure(
+					`wrangler cloudchamber registries remove`,
 					async (
 						imageArgs: StrictYargsOptionsToInterfaceJSON<
 							typeof removeImageRegistryYargs
@@ -174,6 +177,7 @@ export const registriesCommand = (yargs: CommonYargsArgvJSON) => {
 			(args) => args,
 			(args) =>
 				handleFailure(
+					`wrangler cloudchamber registries list`,
 					async (imageArgs: CommonYargsArgvSanitizedJSON, config) => {
 						if (!interactWithUser(imageArgs)) {
 							const registries =

@@ -12,10 +12,10 @@ import {
 } from "@cloudflare/cli";
 import { brandColor, dim } from "@cloudflare/cli/colors";
 import { inputPrompt, spinner } from "@cloudflare/cli/interactive";
+import { SshPublicKeysService } from "@cloudflare/containers-shared";
 import { UserError } from "../../errors";
 import { logger } from "../../logger";
 import { pollSSHKeysUntilCondition } from "../cli";
-import { SshPublicKeysService } from "../client";
 import {
 	checkEverythingIsSet,
 	handleFailure,
@@ -33,7 +33,7 @@ import type {
 	ListSSHPublicKeys,
 	SSHPublicKeyID,
 	SSHPublicKeyItem,
-} from "../client";
+} from "@cloudflare/containers-shared";
 
 function createSSHPublicKeyOptionalYargs(yargs: CommonYargsArgvJSON) {
 	return yargs
@@ -113,16 +113,19 @@ export const sshCommand = (yargs: CommonYargsArgvJSON) => {
 			"list the ssh keys added to your account",
 			(args) => args,
 			(args) =>
-				handleFailure(async (sshArgs: CommonYargsArgvSanitizedJSON, config) => {
-					// check we are in CI or if the user wants to just use JSON
-					if (!interactWithUser(sshArgs)) {
-						const sshKeys = await SshPublicKeysService.listSshPublicKeys();
-						console.log(JSON.stringify(sshKeys, null, 4));
-						return;
-					}
+				handleFailure(
+					`wrangler cloudchamber ssh list`,
+					async (sshArgs: CommonYargsArgvSanitizedJSON, config) => {
+						// check we are in CI or if the user wants to just use JSON
+						if (!interactWithUser(sshArgs)) {
+							const sshKeys = await SshPublicKeysService.listSshPublicKeys();
+							console.log(JSON.stringify(sshKeys, null, 4));
+							return;
+						}
 
-					await handleListSSHKeysCommand(sshArgs, config);
-				})(args)
+						await handleListSSHKeysCommand(sshArgs, config);
+					}
+				)(args)
 		)
 		.command(
 			"create",
@@ -130,6 +133,7 @@ export const sshCommand = (yargs: CommonYargsArgvJSON) => {
 			(args) => createSSHPublicKeyOptionalYargs(args),
 			(args) =>
 				handleFailure(
+					`wrangler cloudchamber ssh create`,
 					async (
 						sshArgs: StrictYargsOptionsToInterfaceJSON<
 							typeof createSSHPublicKeyOptionalYargs

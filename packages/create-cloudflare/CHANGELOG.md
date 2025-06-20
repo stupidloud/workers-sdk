@@ -1,5 +1,67 @@
 # create-cloudflare
 
+## 2.50.0
+
+### Minor Changes
+
+- [#9305](https://github.com/cloudflare/workers-sdk/pull/9305) [`f116623`](https://github.com/cloudflare/workers-sdk/commit/f116623d561a7a4375e0ed3372bc41c021ddd118) Thanks [@dom96](https://github.com/dom96)! - Add @handler to Python templates.
+
+## 2.49.4
+
+### Patch Changes
+
+- [#9524](https://github.com/cloudflare/workers-sdk/pull/9524) [`93d9fd2`](https://github.com/cloudflare/workers-sdk/commit/93d9fd268591a7a8d87c9df1d852ac4b970c7fdc) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore: update dependencies of "create-cloudflare" package
+
+  The following dependency versions have been updated:
+
+  | Dependency | From   | To     |
+  | ---------- | ------ | ------ |
+  | gatsby     | 5.14.3 | 5.14.4 |
+
+- [#9525](https://github.com/cloudflare/workers-sdk/pull/9525) [`0d32f47`](https://github.com/cloudflare/workers-sdk/commit/0d32f47129b3243d2efd02d9400d9f248a97a93f) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore: update dependencies of "create-cloudflare" package
+
+  The following dependency versions have been updated:
+
+  | Dependency   | From   | To     |
+  | ------------ | ------ | ------ |
+  | create-remix | 2.16.6 | 2.16.8 |
+
+- [#9526](https://github.com/cloudflare/workers-sdk/pull/9526) [`e9a34f5`](https://github.com/cloudflare/workers-sdk/commit/e9a34f518131986d27967f47a4bcdb673dcc88df) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore: update dependencies of "create-cloudflare" package
+
+  The following dependency versions have been updated:
+
+  | Dependency          | From  | To    |
+  | ------------------- | ----- | ----- |
+  | create-react-router | 7.6.1 | 7.6.2 |
+
+- [#9527](https://github.com/cloudflare/workers-sdk/pull/9527) [`351657e`](https://github.com/cloudflare/workers-sdk/commit/351657e59353a9a93e80d021b606c5f424bf84d2) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore: update dependencies of "create-cloudflare" package
+
+  The following dependency versions have been updated:
+
+  | Dependency        | From  | To    |
+  | ----------------- | ----- | ----- |
+  | create-docusaurus | 3.8.0 | 3.8.1 |
+
+## 2.49.3
+
+### Patch Changes
+
+- [#9608](https://github.com/cloudflare/workers-sdk/pull/9608) Thanks [@penalosa](https://github.com/penalosa)! - Install Opennext v1.3.0
+
+## 2.49.2
+
+### Patch Changes
+
+- [#9439](https://github.com/cloudflare/workers-sdk/pull/9439) [`8d648e7`](https://github.com/cloudflare/workers-sdk/commit/8d648e7c2f94cf315cdfffad6ee43e01e82a0947) Thanks [@edmundhung](https://github.com/edmundhung)! - update vitest version on hello-world and hello-world-with-assets templates
+
+## 2.49.1
+
+### Patch Changes
+
+- [#9499](https://github.com/cloudflare/workers-sdk/pull/9499) [`7bde13c`](https://github.com/cloudflare/workers-sdk/commit/7bde13c97287cb9d1de2ad0959ee5a6cf1db58ed) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - configure images processing to use "cloudflare" strategy in Astro projects
+
+- [#9478](https://github.com/cloudflare/workers-sdk/pull/9478) [`9b66c33`](https://github.com/cloudflare/workers-sdk/commit/9b66c33e4d20245fca4e0652e557347e916846bd) Thanks [@avenceslau](https://github.com/avenceslau)! - fix: replace placeholder workflow name with valid name
+
 ## 2.49.0
 
 ### Minor Changes
