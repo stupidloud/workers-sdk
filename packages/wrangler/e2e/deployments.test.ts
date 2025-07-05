@@ -14,55 +14,61 @@ const normalize = (str: string) =>
 		[CLOUDFLARE_ACCOUNT_ID]: "CLOUDFLARE_ACCOUNT_ID",
 	}).replaceAll(/^Author:.*$/gm, "Author:      person@example.com");
 
-describe("deployments", { timeout: TIMEOUT }, () => {
-	const workerName = generateResourceName();
-	const helper = new WranglerE2ETestHelper();
-	let deployedUrl: string;
+describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)(
+	"deployments",
+	{ timeout: TIMEOUT },
+	() => {
+		// Note that we are sharing the workerName and helper across all these tests,
+		// which means that these tests are not isolated from each other.
+		// Seeded files will leak between tests.
+		const workerName = generateResourceName();
+		const helper = new WranglerE2ETestHelper();
+		let deployedUrl: string;
 
-	it("deploys a Worker", async () => {
-		await helper.seed({
-			"wrangler.toml": dedent`
+		it("deploys a Worker", async () => {
+			await helper.seed({
+				"wrangler.toml": dedent`
 						name = "${workerName}"
 						main = "src/index.ts"
 						compatibility_date = "2023-01-01"
 						`,
-			"src/index.ts": dedent`
+				"src/index.ts": dedent`
 						export default {
 							fetch(request) {
 								return new Response("Hello World!")
 							}
 						}`,
-			"package.json": dedent`
+				"package.json": dedent`
 						{
 							"name": "${workerName}",
 							"version": "0.0.0",
 							"private": true
 						}
 						`,
+			});
+
+			const output = await helper.run(`wrangler deploy`);
+
+			const match = output.stdout.match(
+				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
+			);
+			assert(match?.groups);
+			deployedUrl = match.groups.url;
+
+			const { text } = await retry(
+				(s) => s.status !== 200,
+				async () => {
+					const r = await fetch(deployedUrl);
+					return { text: await r.text(), status: r.status };
+				}
+			);
+			expect(text).toMatchInlineSnapshot('"Hello World!"');
 		});
 
-		const output = await helper.run(`wrangler deploy`);
+		it("lists 1 deployment", async () => {
+			const output = await helper.run(`wrangler deployments list`);
 
-		const match = output.stdout.match(
-			/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
-		);
-		assert(match?.groups);
-		deployedUrl = match.groups.url;
-
-		const { text } = await retry(
-			(s) => s.status !== 200,
-			async () => {
-				const r = await fetch(deployedUrl);
-				return { text: await r.text(), status: r.status };
-			}
-		);
-		expect(text).toMatchInlineSnapshot('"Hello World!"');
-	});
-
-	it("lists 1 deployment", async () => {
-		const output = await helper.run(`wrangler deployments list`);
-
-		expect(normalize(output.stdout)).toMatchInlineSnapshot(`
+			expect(normalize(output.stdout)).toMatchInlineSnapshot(`
 			"Created:     TIMESTAMP
 			Author:      person@example.com
 			Source:      Upload
@@ -72,38 +78,38 @@ describe("deployments", { timeout: TIMEOUT }, () => {
 			                     Tag:  -
 			                 Message:  -"
 		`);
-	});
+		});
 
-	it("modifies & deploys a Worker", async () => {
-		await helper.seed({
-			"src/index.ts": dedent`
+		it("modifies & deploys a Worker", async () => {
+			await helper.seed({
+				"src/index.ts": dedent`
         export default {
           fetch(request) {
             return new Response("Updated Worker!")
           }
         }`,
+			});
+			const output = await helper.run(`wrangler deploy`);
+
+			const match = output.stdout.match(
+				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
+			);
+			assert(match?.groups);
+			deployedUrl = match.groups.url;
+
+			const { text } = await retry(
+				(s) => s.status !== 200 || s.text === "Hello World!",
+				async () => {
+					const r = await fetch(deployedUrl);
+					return { text: await r.text(), status: r.status };
+				}
+			);
+			expect(text).toMatchInlineSnapshot('"Updated Worker!"');
 		});
-		const output = await helper.run(`wrangler deploy`);
 
-		const match = output.stdout.match(
-			/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
-		);
-		assert(match?.groups);
-		deployedUrl = match.groups.url;
-
-		const { text } = await retry(
-			(s) => s.status !== 200 || s.text === "Hello World!",
-			async () => {
-				const r = await fetch(deployedUrl);
-				return { text: await r.text(), status: r.status };
-			}
-		);
-		expect(text).toMatchInlineSnapshot('"Updated Worker!"');
-	});
-
-	it("lists 2 deployments", async () => {
-		const dep = await helper.run(`wrangler deployments list`);
-		expect(normalize(dep.stdout)).toMatchInlineSnapshot(`
+		it("lists 2 deployments", async () => {
+			const dep = await helper.run(`wrangler deployments list`);
+			expect(normalize(dep.stdout)).toMatchInlineSnapshot(`
 			"Created:     TIMESTAMP
 			Author:      person@example.com
 			Source:      Upload
@@ -121,13 +127,13 @@ describe("deployments", { timeout: TIMEOUT }, () => {
 			                     Tag:  -
 			                 Message:  -"
 		`);
-	});
+		});
 
-	it("rolls back", async () => {
-		const output = await helper.run(
-			`wrangler rollback --message "A test message"`
-		);
-		expect(normalize(output.stdout)).toMatchInlineSnapshot(`
+		it("rolls back", async () => {
+			const output = await helper.run(
+				`wrangler rollback --message "A test message"`
+			);
+			expect(normalize(output.stdout)).toMatchInlineSnapshot(`
 			"├ Fetching latest deployment
 			│
 			├ Your current deployment has 1 version(s):
@@ -160,11 +166,11 @@ describe("deployments", { timeout: TIMEOUT }, () => {
 			╰  SUCCESS  Worker Version 00000000-0000-0000-0000-000000000000 has been deployed to 100% of traffic.
 			Current Version ID: 00000000-0000-0000-0000-000000000000"
 		`);
-	});
+		});
 
-	it("lists deployments", async () => {
-		const dep = await helper.run(`wrangler deployments list`);
-		expect(normalize(dep.stdout)).toMatchInlineSnapshot(`
+		it("lists deployments", async () => {
+			const dep = await helper.run(`wrangler deployments list`);
+			expect(normalize(dep.stdout)).toMatchInlineSnapshot(`
 			"Created:     TIMESTAMP
 			Author:      person@example.com
 			Source:      Upload
@@ -190,14 +196,16 @@ describe("deployments", { timeout: TIMEOUT }, () => {
 			                     Tag:  -
 			                 Message:  -"
 		`);
-	});
-});
+		});
+	}
+);
 
 type AssetTestCase = {
 	path: string;
 	content?: string;
 	redirect?: string;
 };
+
 function generateInitialAssets(workerName: string) {
 	return {
 		"public/index.html": dedent`
@@ -215,7 +223,7 @@ function generateInitialAssets(workerName: string) {
 	};
 }
 
-const checkAssets = async (testCases: AssetTestCase[], deployedUrl: string) => {
+async function checkAssets(testCases: AssetTestCase[], deployedUrl: string) {
 	for (const testCase of testCases) {
 		await vi.waitFor(
 			async () => {
@@ -224,35 +232,43 @@ const checkAssets = async (testCases: AssetTestCase[], deployedUrl: string) => {
 				const url = r.url;
 
 				if (testCase.content) {
-					expect(text).toContain(testCase.content);
+					expect(
+						text,
+						`expected content for ${testCase.path} to be ${testCase.content}`
+					).toContain(testCase.content);
 				}
 				if (testCase.redirect) {
-					expect(new URL(url).pathname).toEqual(
-						new URL(testCase.redirect, deployedUrl).pathname
-					);
+					expect(
+						new URL(url).pathname,
+						`expected redirect for ${testCase.path} to be ${testCase.redirect}`
+					).toEqual(new URL(testCase.redirect, deployedUrl).pathname);
 				} else {
-					expect(new URL(url).pathname).toEqual(
-						new URL(testCase.path, deployedUrl).pathname
-					);
+					expect(
+						new URL(url).pathname,
+						`unexpected pathname for ${testCase.path}`
+					).toEqual(new URL(testCase.path, deployedUrl).pathname);
 				}
 			},
-			{ interval: 1_000, timeout: 40_000 }
+			{
+				interval: 1_000,
+				timeout: 40_000,
+			}
 		);
 	}
-};
+}
 
-describe("Workers + Assets deployment", () => {
-	const helper = new WranglerE2ETestHelper();
-	let deployedUrl: string | undefined;
+describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)("Workers + Assets deployment", () => {
+	let helper: WranglerE2ETestHelper;
+	let workerName: string;
+
+	beforeEach(() => {
+		// We are recreating the helper on each test to ensure they are isolated from each other.
+		helper = new WranglerE2ETestHelper();
+		// Use a new user Worker in each test
+		workerName = generateResourceName();
+	});
 
 	describe("Workers", () => {
-		let workerName: string;
-
-		beforeEach(() => {
-			// deploy a new user Worker in each test
-			workerName = generateResourceName();
-		});
-
 		afterEach(async () => {
 			// clean up user Worker after each test
 			await helper.run(`wrangler delete`);
@@ -294,7 +310,7 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
 			);
 			assert(match?.groups);
-			deployedUrl = match.groups.url;
+			const deployedUrl = match.groups.url;
 
 			const testCases: AssetTestCase[] = [
 				// Tests html_handling = "auto_trailing_slash" (default):
@@ -384,7 +400,7 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
 			);
 			assert(match?.groups);
-			deployedUrl = match.groups.url;
+			const deployedUrl = match.groups.url;
 
 			const testCases: AssetTestCase[] = [
 				// because html handling has now been set to "none", only exact matches will be served
@@ -466,7 +482,7 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
 			);
 			assert(match?.groups);
-			deployedUrl = match.groups.url;
+			const deployedUrl = match.groups.url;
 
 			const testCases: AssetTestCase[] = [
 				// Tests html_handling = "auto_trailing_slash" (default):
@@ -551,7 +567,7 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
 			);
 			assert(match?.groups);
-			deployedUrl = match.groups.url;
+			const deployedUrl = match.groups.url;
 
 			const testCases: AssetTestCase[] = [
 				{
@@ -569,17 +585,82 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 			];
 			await checkAssets(testCases, deployedUrl);
 		});
+
+		it("runs the user Worker ahead of matching assets for matching run_worker_first routes", async () => {
+			await helper.seed({
+				"wrangler.toml": dedent`
+							name = "${workerName}"
+							main = "src/index.ts"
+							compatibility_date = "2023-01-01"
+							[assets]
+							directory = "public"
+							binding = "ASSETS"
+							html_handling = "none"
+							not_found_handling = "404-page"
+							run_worker_first = ["/api/*", "!/api/assets/*"]
+					`,
+				"src/index.ts": dedent`
+							export default {
+								async fetch(request, env) {
+									return new Response("Hello World from User Worker!")
+								}
+							}`,
+				...generateInitialAssets(workerName),
+				"public/api/index.html": "<h1>api/index.html</h1>",
+				"public/api/assets/test.html": "<h1>api/assets/test.html</h1>",
+			});
+
+			// deploy user Worker && verify output
+			const output = await helper.run(`wrangler deploy`);
+			const normalizedStdout = normalize(output.stdout);
+
+			expect(normalizedStdout).toContain(dedent`
+				🌀 Building list of assets...
+				✨ Read 7 files from the assets directory /tmpdir
+				🌀 Starting asset upload...
+				🌀 Found 5 new or modified static assets to upload. Proceeding with upload...
+				+ /404.html
+				+ /api/index.html
+				+ /index.html
+				+ /api/assets/test.html
+				+ /[boop].html
+			`);
+			expect(normalizedStdout).toContain(dedent`
+				✨ Success! Uploaded 5 files (TIMINGS)
+				Total Upload: xx KiB / gzip: xx KiB
+				Your Worker has access to the following bindings:
+				Binding            Resource
+				env.ASSETS         Assets
+				Uploaded tmp-e2e-worker-00000000-0000-0000-0000-000000000000 (TIMINGS)
+				Deployed tmp-e2e-worker-00000000-0000-0000-0000-000000000000 triggers (TIMINGS)
+				  https://tmp-e2e-worker-00000000-0000-0000-0000-000000000000.SUBDOMAIN.workers.dev
+				Current Version ID: 00000000-0000-0000-0000-000000000000
+			`);
+
+			const match = output.stdout.match(
+				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
+			);
+			assert(match?.groups);
+			const deployedUrl = match.groups.url;
+
+			const testCases: AssetTestCase[] = [
+				{ path: "/index.html", content: "<h1>index.html</h1>" },
+				{ path: "/missing.html", content: "<h1>404.html</h1>" },
+				{ path: "/api/", content: "Hello World from User Worker!" },
+				{ path: "/api/foo.html", content: "Hello World from User Worker!" },
+				{ path: "/api/assets/missing", content: "404.html" },
+				{ path: "/api/assets/test.html", content: "api/assets/test.html" },
+			];
+
+			await checkAssets(testCases, deployedUrl);
+		});
 	});
 
 	describe("Workers for Platforms", () => {
 		let dispatchNamespaceName: string;
 		let dispatchWorkerName: string;
-		let workerName: string;
 
 		beforeEach(async () => {
-			// deploy a new user Worker in each test
-			workerName = generateResourceName();
-
 			// set up a new dispatch Worker in each test
 			dispatchNamespaceName = generateResourceName("dispatch");
 			dispatchWorkerName = generateResourceName();
@@ -672,7 +753,7 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
 			);
 			assert(match?.groups);
-			deployedUrl = match.groups.url;
+			const deployedUrl = match.groups.url;
 
 			const testCases: AssetTestCase[] = [
 				// Tests html_handling = "auto_trailing_slash" (default):
@@ -785,7 +866,7 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
 			);
 			assert(match?.groups);
-			deployedUrl = match.groups.url;
+			const deployedUrl = match.groups.url;
 
 			const testCases: AssetTestCase[] = [
 				// because html handling has now been set to "none", only exact matches will be served
@@ -896,7 +977,7 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 				/(?<url>https:\/\/tmp-e2e-.+?\..+?\.workers\.dev)/
 			);
 			assert(match?.groups);
-			deployedUrl = match.groups.url;
+			const deployedUrl = match.groups.url;
 
 			const testCases: AssetTestCase[] = [
 				{
@@ -915,8 +996,8 @@ Current Version ID: 00000000-0000-0000-0000-000000000000`);
 			await checkAssets(testCases, deployedUrl);
 		});
 	});
+
 	describe("durable objects [containers]", () => {
-		const workerName = generateResourceName();
 		beforeEach(async () => {
 			await helper.seed({
 				"wrangler.toml": dedent`

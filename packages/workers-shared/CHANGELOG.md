@@ -1,5 +1,35 @@
 # @cloudflare/workers-shared
 
+## 0.18.1
+
+### Patch Changes
+
+- [#9824](https://github.com/cloudflare/workers-sdk/pull/9824) [`8104705`](https://github.com/cloudflare/workers-sdk/commit/810470555f49c358b1ebc3f679183d1f8ea89028) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - Allow "plain text" images when blocking vulnerable non-image responses
+
+- [#9785](https://github.com/cloudflare/workers-sdk/pull/9785) [`07416ba`](https://github.com/cloudflare/workers-sdk/commit/07416ba644ef019f7cdccc7b3ed67f92abf03438) Thanks [@matthewdavidrodgers](https://github.com/matthewdavidrodgers)! - Handle next apps hosted at a path other than the root when blocking vulnerable non-image requests
+
+## 0.18.0
+
+### Minor Changes
+
+- [#9661](https://github.com/cloudflare/workers-sdk/pull/9661) [`e216a76`](https://github.com/cloudflare/workers-sdk/commit/e216a76fba20acf06faad2d9b310a189fe3ccb08) Thanks [@matthewdavidrodgers](https://github.com/matthewdavidrodgers)! - Limit free tier requests in the Router worker
+
+### Patch Changes
+
+- [#9635](https://github.com/cloudflare/workers-sdk/pull/9635) [`b066cf8`](https://github.com/cloudflare/workers-sdk/commit/b066cf836a5fc8436068be42bf74100c4bcd58ea) Thanks [@matthewdavidrodgers](https://github.com/matthewdavidrodgers)! - Block possibly vulnerable requests to the router worker
+
+## 0.17.6
+
+### Patch Changes
+
+- [#9416](https://github.com/cloudflare/workers-sdk/pull/9416) [`3383021`](https://github.com/cloudflare/workers-sdk/commit/33830214ff76ec4738b3e998370eca7568240e12) Thanks [@matthewdavidrodgers](https://github.com/matthewdavidrodgers)! - Adds support for static routing to Workers Assets
+
+  Implements the proposal noted here https://github.com/cloudflare/workers-sdk/discussions/9143
+
+  In brief: when static routing is present for a Worker with assets, routing via those static rules takes precedence. When a request is evaluated in the Router Worker, the request path is first compared to the `"asset_worker"` rules (which are to be specified via "negative" rules, e.g. `"!/api/assets"`). If any match, the request is forwarded directly to the Asset Worker. If instead any `"user_worker"` rules match, the request is forwarded directly to the User Worker. If neither match (or static routing was not provided), the existing behavior takes over.
+
+  As part of this explicit routing, when static routing is present, the check against `Sec-Fetch-Mode: navigate` (to determine if this should serve an asset or go to the User Worker for not_found_handling) is disabled. Routing can be controlled by setting routing rules via `assets.run_worker_first` in your Wrangler configuration file.
+
 ## 0.17.5
 
 ### Patch Changes

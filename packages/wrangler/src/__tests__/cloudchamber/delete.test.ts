@@ -39,10 +39,7 @@ describe("cloudchamber delete", () => {
 			      --cwd      Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
 			  -e, --env      Environment to use for operations, and for selecting .env and .dev.vars files  [string]
 			  -h, --help     Show help  [boolean]
-			  -v, --version  Show version number  [boolean]
-
-			OPTIONS
-			      --json  Return output as clean JSON  [boolean] [default: false]"
+			  -v, --version  Show version number  [boolean]"
 		`);
 	});
 
@@ -62,11 +59,11 @@ describe("cloudchamber delete", () => {
 		// so testing the actual UI will be harder than expected
 		// TODO: think better on how to test UI actions
 		expect(std.out).toMatchInlineSnapshot(
-			`"{\\"id\\":\\"1\\",\\"type\\":\\"default\\",\\"created_at\\":\\"123\\",\\"account_id\\":\\"123\\",\\"vcpu\\":4,\\"memory\\":\\"400MB\\",\\"memory_mib\\":400,\\"version\\":1,\\"image\\":\\"hello\\",\\"location\\":{\\"name\\":\\"sfo06\\",\\"enabled\\":true},\\"network\\":{\\"ipv4\\":\\"1.1.1.1\\"},\\"placements_ref\\":\\"http://ref\\",\\"node_group\\":\\"metal\\"} null 4"`
+			`"{\\"id\\":\\"1\\",\\"type\\":\\"default\\",\\"created_at\\":\\"123\\",\\"account_id\\":\\"123\\",\\"vcpu\\":4,\\"memory\\":\\"400MB\\",\\"memory_mib\\":400,\\"version\\":1,\\"image\\":\\"hello\\",\\"location\\":{\\"name\\":\\"sfo06\\",\\"enabled\\":true},\\"network\\":{\\"mode\\":\\"public\\",\\"ipv4\\":\\"1.1.1.1\\"},\\"placements_ref\\":\\"http://ref\\",\\"node_group\\":\\"metal\\"} null 4"`
 		);
 	});
 
-	it("can't modify delete due to lack of fields (json)", async () => {
+	it("can't modify delete due to lack of fields", async () => {
 		setIsTTY(false);
 		expect(std.err).toMatchInlineSnapshot(`""`);
 		await expect(

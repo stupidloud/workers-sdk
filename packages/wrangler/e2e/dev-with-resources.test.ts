@@ -5,6 +5,7 @@ import dedent from "ts-dedent";
 import { Agent, fetch } from "undici";
 import { beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import { CLOUDFLARE_ACCOUNT_ID } from "./helpers/account-id";
 import { WranglerE2ETestHelper } from "./helpers/e2e-wrangler-test";
 import { generateResourceName } from "./helpers/generate-resource-name";
 
@@ -13,8 +14,8 @@ const inspectorPort = await getPort();
 
 const RUNTIMES = [
 	{ flags: "", runtime: "local" },
-	{ flags: "--remote", runtime: "remote" },
-] as const;
+	...(CLOUDFLARE_ACCOUNT_ID ? [{ flags: "--remote", runtime: "remote" }] : []),
+];
 
 // WebAssembly module containing single `func add(i32, i32): i32` export.
 // Generated using https://webassembly.github.io/wabt/demo/wat2wasm/.
@@ -55,7 +56,7 @@ describe.sequential.each(RUNTIMES)("Core: $flags", ({ runtime, flags }) => {
 						if (pathname === "/") {
 							return new Response("modules");
 						} else if (pathname === "/error") {
-							throw new Error("🙈");
+							throw new Error("monkey");
 						} else {
 							return new Response(null, { status: 404 });
 						}
@@ -76,10 +77,10 @@ describe.sequential.each(RUNTIMES)("Core: $flags", ({ runtime, flags }) => {
 		});
 		const text = await res.text();
 		if (isLocal) {
-			expect(text).toContain("Error: 🙈");
+			expect(text).toContain("Error: monkey");
 			expect(text).toContain("src/index.ts:7:10");
 		}
-		await worker.readUntil(/Error: 🙈/, 30_000);
+		await worker.readUntil(/Error: monkey/, 30_000);
 		await worker.readUntil(/src\/index\.ts:7:10/, 30_000);
 	});
 
@@ -96,7 +97,7 @@ describe.sequential.each(RUNTIMES)("Core: $flags", ({ runtime, flags }) => {
 					if (pathname === "/") {
 						event.respondWith(new Response("service worker"));
 					} else if (pathname === "/error") {
-						throw new Error("🙈");
+						throw new Error("monkey");
 					} else {
 						event.respondWith(new Response(null, { status: 404 }));
 					}
@@ -115,10 +116,10 @@ describe.sequential.each(RUNTIMES)("Core: $flags", ({ runtime, flags }) => {
 		});
 		const text = await res.text();
 		if (isLocal) {
-			expect(text).toContain("Error: 🙈");
+			expect(text).toContain("Error: monkey");
 			expect(text).toContain("src/index.ts:6:9");
 		}
-		await worker.readUntil(/Error: 🙈/, 30_000);
+		await worker.readUntil(/Error: monkey/, 30_000);
 		await worker.readUntil(/src\/index\.ts:6:9/, 30_000);
 	});
 
@@ -396,6 +397,64 @@ describe.sequential.each(RUNTIMES)("Bindings: $flags", ({ runtime, flags }) => {
 		expect(await res.text()).toBe("my-secret-value");
 	});
 
+	it.skipIf(!isLocal)("exposes Hello World bindings", async () => {
+		await helper.seed({
+			"wrangler.toml": dedent`
+				name = "${workerName}"
+				main = "src/index.ts"
+				compatibility_date = "2025-01-01"
+				unsafe_hello_world = [
+					{ binding = "BINDING" }
+				]
+			`,
+			"src/index.ts": dedent`
+				export default {
+					async fetch(request, env, ctx) {
+						 if (request.method === "POST") {
+							await env.BINDING.set(await request.text());
+						}
+						const result = await env.BINDING.get();
+						if (!result.value) {
+							return new Response('Not found', { status: 404 });
+						}
+						return Response.json(result);
+					}
+				}
+			`,
+		});
+		const worker = helper.runLongLived(
+			`wrangler dev ${flags} --port ${port} --inspector-port ${inspectorPort}`
+		);
+		const { url } = await worker.waitForReady();
+		const res1 = await fetch(url, {
+			headers: { "MF-Disable-Pretty-Error": "true" },
+		});
+		expect(await res1.text()).toBe("Not found");
+		expect(res1.status).toBe(404);
+
+		const res2 = await fetch(url, {
+			method: "POST",
+			body: "hello world",
+			headers: { "MF-Disable-Pretty-Error": "true" },
+		});
+		expect(await res2.json()).toEqual({ value: "hello world" });
+		expect(res2.status).toBe(200);
+
+		const res3 = await fetch(url, {
+			headers: { "MF-Disable-Pretty-Error": "true" },
+		});
+		expect(await res3.json()).toEqual({ value: "hello world" });
+		expect(res3.status).toBe(200);
+
+		const res4 = await fetch(url, {
+			method: "POST",
+			body: "",
+			headers: { "MF-Disable-Pretty-Error": "true" },
+		});
+		expect(await res4.text()).toBe("Not found");
+		expect(res4.status).toBe(404);
+	});
+
 	it("supports Workers Sites bindings", async ({ onTestFinished }) => {
 		if (!isLocal) {
 			onTestFinished(async () => {
@@ -563,7 +622,7 @@ describe.sequential.each(RUNTIMES)("Bindings: $flags", ({ runtime, flags }) => {
 
 	// Refer to https://github.com/cloudflare/workers-sdk/pull/8492 for full context on why this test does different things to the others.
 	// In particular, it uses a shared resource across test runs
-	it("exposes Vectorize bindings", async () => {
+	it.skipIf(!CLOUDFLARE_ACCOUNT_ID)("exposes Vectorize bindings", async () => {
 		const name = await helper.vectorize(
 			32,
 			"euclidean",
@@ -771,9 +830,14 @@ describe.sequential.each(RUNTIMES)("Bindings: $flags", ({ runtime, flags }) => {
 	});
 
 	describe.sequential.each([
-		{ imagesMode: "remote", extraFlags: "" },
-		{ imagesMode: "local", extraFlags: "--experimental-images-local-mode" },
-	] as const)("Images Binding Mode: $imagesMode", async ({ extraFlags }) => {
+		{
+			imagesMode: "local",
+			extraFlags: "--experimental-images-local-mode",
+		},
+		...(CLOUDFLARE_ACCOUNT_ID
+			? [{ imagesMode: "remote", extraFlags: "" }]
+			: []),
+	])("Images Binding Mode: $imagesMode", async ({ extraFlags }) => {
 		it("exposes Images bindings", async () => {
 			await helper.seed({
 				"wrangler.toml": dedent`

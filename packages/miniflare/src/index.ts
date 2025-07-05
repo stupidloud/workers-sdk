@@ -13,6 +13,7 @@ import util from "util";
 import zlib from "zlib";
 import exitHook from "exit-hook";
 import { $ as colors$, green } from "kleur/colors";
+import { npxImport } from "npx-import";
 import stoppable from "stoppable";
 import {
 	Dispatcher,
@@ -38,13 +39,12 @@ import {
 	Response,
 } from "./http";
 import {
-	ContainerOptions,
-	ContainerService,
 	D1_PLUGIN_NAME,
 	DURABLE_OBJECTS_PLUGIN_NAME,
 	DurableObjectClassNames,
 	getDirectSocketName,
 	getGlobalServices,
+	HELLO_WORLD_PLUGIN_NAME,
 	HOST_CAPNP_CONNECT,
 	KV_PLUGIN_NAME,
 	normaliseDurableObject,
@@ -142,6 +142,7 @@ import type {
 	Queue,
 	R2Bucket,
 } from "@cloudflare/workers-types/experimental";
+import type { ChildProcess } from "child_process";
 
 const DEFAULT_HOST = "127.0.0.1";
 function getURLSafeHost(host: string) {
@@ -343,6 +344,7 @@ function getDurableObjectClassNames(
 				enableSql,
 				unsafeUniqueKey,
 				unsafePreventEviction,
+				container,
 			} = normaliseDurableObject(designator);
 			// Get or create `Map` mapping class name to optional unsafe unique key
 			let classNames = serviceClassNames.get(serviceName);
@@ -384,6 +386,7 @@ function getDurableObjectClassNames(
 					enableSql,
 					unsafeUniqueKey,
 					unsafePreventEviction,
+					container,
 				});
 			}
 		}
@@ -429,12 +432,12 @@ function getExternalServiceEntrypoints(
 			for (const [name, service] of Object.entries(
 				workerOpts.core.serviceBindings
 			)) {
-				const { serviceName, entrypoint, mixedModeConnectionString } =
+				const { serviceName, entrypoint, remoteProxyConnectionString } =
 					normaliseServiceDesignator(service);
 
 				if (
 					// Skip if it is a remote service
-					mixedModeConnectionString === undefined &&
+					remoteProxyConnectionString === undefined &&
 					// Skip if the service is bound to another Worker defined in the Miniflare config
 					serviceName &&
 					!allWorkerNames.includes(serviceName)
@@ -463,12 +466,12 @@ function getExternalServiceEntrypoints(
 					scriptName,
 					unsafePreventEviction,
 					enableSql: useSQLite,
-					mixedModeConnectionString,
+					remoteProxyConnectionString,
 				} = normaliseDurableObject(designator);
 
 				if (
 					// Skip if it is a remote durable object
-					mixedModeConnectionString === undefined &&
+					remoteProxyConnectionString === undefined &&
 					// Skip if the durable object is bound to a Worker that exists in the current Miniflare config
 					scriptName &&
 					!allWorkerNames.includes(scriptName)
@@ -498,12 +501,12 @@ function getExternalServiceEntrypoints(
 				const {
 					serviceName = workerOpts.core.name,
 					entrypoint,
-					mixedModeConnectionString,
+					remoteProxyConnectionString,
 				} = normaliseServiceDesignator(workerOpts.core.tails[i]);
 
 				if (
 					// Skip if it is a remote service
-					mixedModeConnectionString === undefined &&
+					remoteProxyConnectionString === undefined &&
 					// Skip if the service is bound to the existing workers
 					serviceName &&
 					!allWorkerNames.includes(serviceName)
@@ -897,13 +900,17 @@ export class Miniflare {
 	#workerOpts: PluginWorkerOptions[];
 	#log: Log;
 
+	#browsers: Set<{
+		wsEndpoint: () => string;
+		process: () => ChildProcess;
+	}> = new Set();
+
 	readonly #runtime?: Runtime;
 	readonly #removeExitHook?: () => void;
 	#runtimeEntryURL?: URL;
 	#socketPorts?: SocketPorts;
 	#runtimeDispatcher?: Dispatcher;
 	#proxyClient?: ProxyClient;
-	#containerService?: ContainerService;
 
 	#cfObject?: Record<string, any> = {};
 
@@ -966,7 +973,12 @@ export class Miniflare {
 
 		this.#log = this.#sharedOpts.core.log ?? new NoOpLog();
 
-		if (enableInspectorProxy) {
+		// If we're in a JavaScript Debug terminal, Miniflare will send the inspector ports directly to VSCode for registration
+		// As such, we don't need our inspector proxy and in fact including it causes issue with multiple clients connected to the
+		// inspector endpoint.
+		const inVscodeJsDebugTerminal = !!process.env.VSCODE_INSPECTOR_OPTIONS;
+
+		if (enableInspectorProxy && !inVscodeJsDebugTerminal) {
 			if (this.#sharedOpts.core.inspectorPort === undefined) {
 				throw new MiniflareCoreError(
 					"ERR_MISSING_INSPECTOR_PROXY_PORT",
@@ -1281,6 +1293,18 @@ export class Miniflare {
 				if (!colors$.enabled) message = stripAnsi(message);
 				this.#log.logWithLevel(logLevel, message);
 				response = new Response(null, { status: 204 });
+			} else if (url.pathname === "/browser/launch") {
+				// Version should be kept in sync with the supported version at https://github.com/cloudflare/puppeteer?tab=readme-ov-file#workers-version-of-puppeteer-core
+				const puppeteer = await npxImport(
+					"puppeteer@22.8.2",
+					this.#log.warn.bind(this.#log)
+				);
+
+				// @ts-expect-error Puppeteer is dynamically installed, and so doesn't have types available
+				const browser = await puppeteer.launch({ headless: "old" });
+				this.#browsers.add(browser);
+
+				response = new Response(browser.wsEndpoint());
 			} else if (url.pathname === "/core/store-temp-file") {
 				const prefix = url.searchParams.get("prefix");
 				const folder = prefix ? `files/${prefix}` : "files";
@@ -1589,8 +1613,6 @@ export class Miniflare {
 			innerBindings: Worker_Binding[];
 		}[] = [];
 
-		let containerOptions: NonNullable<ContainerOptions> = {};
-
 		for (const [key, plugin] of PLUGIN_ENTRIES) {
 			const pluginExtensions = await plugin.getExtensions?.({
 				// @ts-expect-error `CoreOptionsSchema` has required options which are
@@ -1620,14 +1642,6 @@ export class Miniflare {
 				// This will be the UserWorker, or the vitest pool worker wrapping the UserWorker
 				// The asset plugin needs this so that it can set the binding between the RouterWorker and the UserWorker
 				workerOpts.assets.assets.workerName = workerOpts.core.name;
-			}
-
-			if (workerOpts.containers.containers) {
-				// we don't care which worker this container belongs to, as they are id'd already by the DO classname
-				containerOptions = {
-					...containerOptions,
-					...workerOpts.containers.containers,
-				};
 			}
 
 			// Collect all bindings from this worker
@@ -1887,17 +1901,6 @@ export class Miniflare {
 			}
 		}
 
-		if (
-			Object.keys(containerOptions).length &&
-			!sharedOpts.containers.ignore_containers
-		) {
-			if (this.#containerService === undefined) {
-				this.#containerService = new ContainerService(containerOptions);
-			} else {
-				this.#containerService.updateConfig(containerOptions);
-			}
-		}
-
 		const globalServices = getGlobalServices({
 			sharedOptions: sharedOpts.core,
 			allWorkerRoutes,
@@ -1952,6 +1955,10 @@ export class Miniflare {
 	}
 
 	async #assembleAndUpdateConfig() {
+		for (const browser of this.#browsers) {
+			// .close() isn't enough
+			await browser.process().kill("SIGKILL");
+		}
 		// This function must be run with `#runtimeMutex` held
 		const initial = !this.#runtimeEntryURL;
 		assert(this.#runtime !== undefined);
@@ -2010,7 +2017,8 @@ export class Miniflare {
 		};
 		const maybeSocketPorts = await this.#runtime.updateConfig(
 			configBuffer,
-			runtimeOpts
+			runtimeOpts,
+			this.#workerOpts.flatMap((w) => w.core.name ?? [])
 		);
 		if (this.#disposeController.signal.aborted) return;
 		if (maybeSocketPorts === undefined) {
@@ -2183,7 +2191,7 @@ export class Miniflare {
 							workerOpts.do.durableObjects ?? {}
 						).reduce<WorkerDefinition["durableObjects"]>(
 							(internalObjects, [bindingName, designator]) => {
-								const { className, scriptName, mixedModeConnectionString } =
+								const { className, scriptName, remoteProxyConnectionString } =
 									normaliseDurableObject(designator);
 
 								if (
@@ -2192,7 +2200,7 @@ export class Miniflare {
 									// If the scriptName matches one of the workers defined, it is internal as well
 									allWorkerNames.includes(scriptName) ||
 									// If it is not a remote durable object
-									mixedModeConnectionString === undefined
+									remoteProxyConnectionString === undefined
 								) {
 									internalObjects.push({
 										name: bindingName,
@@ -2610,6 +2618,15 @@ export class Miniflare {
 	): Promise<ReplaceWorkersTypes<R2Bucket>> {
 		return this.#getProxy(R2_PLUGIN_NAME, bindingName, workerName);
 	}
+	getHelloWorldBinding(
+		bindingName: string,
+		workerName?: string
+	): Promise<{
+		get: () => Promise<{ value: string; ms?: number }>;
+		set: (value: string) => Promise<void>;
+	}> {
+		return this.#getProxy(HELLO_WORLD_PLUGIN_NAME, bindingName, workerName);
+	}
 
 	/** @internal */
 	_getInternalDurableObjectNamespace(
@@ -2641,12 +2658,18 @@ export class Miniflare {
 		try {
 			await this.#waitForReady(/* disposing */ true);
 		} finally {
+			for (const browser of this.#browsers) {
+				// .close() isn't enough
+				await browser.process().kill("SIGKILL");
+			}
+
 			// Remove exit hook, we're cleaning up what they would've cleaned up now
 			this.#removeExitHook?.();
 
 			// Cleanup as much as possible even if `#init()` threw
 			await this.#proxyClient?.dispose();
 			await this.#runtime?.dispose();
+
 			await this.#stopLoopbackServer();
 			// `rm -rf ${#tmpPath}`, this won't throw if `#tmpPath` doesn't exist
 			await fs.promises.rm(this.#tmpPath, { force: true, recursive: true });

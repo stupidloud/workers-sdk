@@ -40,6 +40,7 @@ const EXPECTED_RESULT = `
 		        \\"enabled\\": true
 		    },
 		    \\"network\\": {
+		        \\"mode\\": \\"public\\",
 		        \\"ipv4\\": \\"1.1.1.1\\"
 		    },
 		    \\"placements_ref\\": \\"http://ref\\",
@@ -79,12 +80,12 @@ describe("cloudchamber modify", () => {
 			  -v, --version  Show version number  [boolean]
 
 			OPTIONS
-			      --json               Return output as clean JSON  [boolean] [default: false]
 			      --var                Container environment variables  [array]
 			      --label              Deployment labels  [array]
 			      --ssh-public-key-id  Public SSH key IDs to include in this container. You can add one to your account with \`wrangler cloudchamber ssh create  [array]
 			      --image              The new image that the deployment will have from now on  [string]
 			      --location           The new location that the deployment will have from now on  [string]
+			      --instance-type      The new instance type that the deployment will have from now on  [choices: \\"dev\\", \\"basic\\", \\"standard\\"]
 			      --vcpu               The new vcpu that the deployment will have from now on  [number]
 			      --memory             The new memory that the deployment will have from now on  [string]"
 		`);

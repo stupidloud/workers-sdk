@@ -43,7 +43,6 @@ describe("cloudchamber list", () => {
 			  -v, --version  Show version number  [boolean]
 
 			OPTIONS
-			      --json      Return output as clean JSON  [boolean] [default: false]
 			      --location  Filter deployments by location  [string]
 			      --image     Filter deployments by image  [string]
 			      --state     Filter deployments by deployment state  [string]
@@ -86,6 +85,7 @@ describe("cloudchamber list", () => {
 		            \\"enabled\\": true
 		        },
 		        \\"network\\": {
+		            \\"mode\\": \\"public\\",
 		            \\"ipv4\\": \\"1.1.1.1\\"
 		        },
 		        \\"placements_ref\\": \\"http://ref\\",
@@ -106,6 +106,7 @@ describe("cloudchamber list", () => {
 		            \\"enabled\\": true
 		        },
 		        \\"network\\": {
+		            \\"mode\\": \\"public\\",
 		            \\"ipv4\\": \\"1.1.1.2\\"
 		        },
 		        \\"current_placement\\": {
@@ -136,6 +137,7 @@ describe("cloudchamber list", () => {
 		            \\"enabled\\": true
 		        },
 		        \\"network\\": {
+		            \\"mode\\": \\"public\\",
 		            \\"ipv4\\": \\"1.1.1.1\\"
 		        },
 		        \\"placements_ref\\": \\"http://ref\\",
@@ -156,6 +158,7 @@ describe("cloudchamber list", () => {
 		            \\"enabled\\": true
 		        },
 		        \\"network\\": {
+		            \\"mode\\": \\"public\\",
 		            \\"ipv4\\": \\"1.1.1.2\\"
 		        },
 		        \\"current_placement\\": {

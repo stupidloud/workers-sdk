@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import type { ConfigBindingOptions } from "../../config";
 import type { CfWorkerInit } from "../../deployment-bundle/worker";
 import type {
-	AsyncHook,
 	Binding,
 	File,
 	Hook,
@@ -54,15 +53,15 @@ export function urlFromParts(
 	return url;
 }
 
-type UnwrapHook<H> = H extends Hook<infer T> ? T : never;
+type UnwrapHook<
+	T extends HookValues | Promise<HookValues>,
+	Args extends unknown[],
+> = Hook<T, Args>;
+
 export function unwrapHook<
-	H extends AsyncHook<T, Args> | undefined,
-	T extends HookValues = UnwrapHook<H>,
-	Args extends unknown[] = [],
->(
-	hook: H,
-	...args: Args
-): H extends undefined ? UnwrapHook<H> | undefined : UnwrapHook<H> {
+	T extends HookValues | Promise<HookValues>,
+	Args extends unknown[],
+>(hook: UnwrapHook<T, Args>, ...args: Args): T {
 	return typeof hook === "function" ? hook(...args) : hook;
 }
 
@@ -265,6 +264,12 @@ export function convertCfWorkerInitBindingsToBindings(
 				}
 				break;
 			}
+			case "unsafe_hello_world": {
+				for (const { binding, ...x } of info) {
+					output[binding] = { type: "unsafe_hello_world", ...x };
+				}
+				break;
+			}
 			default: {
 				assertNever(type);
 			}
@@ -307,6 +312,7 @@ export async function convertBindingsToCfWorkerInitBindings(
 		unsafe: undefined,
 		assets: undefined,
 		pipelines: undefined,
+		unsafe_hello_world: undefined,
 	};
 
 	const fetchers: Record<string, ServiceFetch> = {};
@@ -393,6 +399,9 @@ export async function convertBindingsToCfWorkerInitBindings(
 		} else if (binding.type === "secrets_store_secret") {
 			bindings.secrets_store_secrets ??= [];
 			bindings.secrets_store_secrets.push({ ...binding, binding: name });
+		} else if (binding.type === "unsafe_hello_world") {
+			bindings.unsafe_hello_world ??= [];
+			bindings.unsafe_hello_world.push({ ...binding, binding: name });
 		} else if (isUnsafeBindingType(binding.type)) {
 			bindings.unsafe ??= {
 				bindings: [],

@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import patchConsole from "patch-console";
+import * as user from "../../user";
 import { mockAccount, setWranglerConfig } from "../cloudchamber/utils";
 import { mockAccountId, mockApiToken } from "../helpers/mock-account-id";
 import { mockConsoleMethods } from "../helpers/mock-console";
@@ -28,7 +29,7 @@ describe("containers info", () => {
 		expect(std.out).toMatchInlineSnapshot(`
 			"wrangler containers info [ID]
 
-			get information about a specific container
+			Get information about a specific container
 
 			POSITIONALS
 			  ID  id of the containers to view  [string]
@@ -38,11 +39,21 @@ describe("containers info", () => {
 			      --cwd      Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
 			  -e, --env      Environment to use for operations, and for selecting .env and .dev.vars files  [string]
 			  -h, --help     Show help  [boolean]
-			  -v, --version  Show version number  [boolean]
-
-			OPTIONS
-			      --json  Return output as clean JSON  [boolean] [default: false]"
+			  -v, --version  Show version number  [boolean]"
 		`);
+	});
+
+	it("should show the correct authentication error", async () => {
+		const spy = vi.spyOn(user, "getScopes");
+		spy.mockReset();
+		spy.mockImplementationOnce(() => []);
+		setIsTTY(false);
+		setWranglerConfig({});
+		await expect(
+			runWrangler("containers info asdf")
+		).rejects.toThrowErrorMatchingInlineSnapshot(
+			`[Error: You need 'containers:write', try logging in again or creating an appropiate API token]`
+		);
 	});
 
 	it("should show a single container when given an ID (json)", async () => {
@@ -53,7 +64,9 @@ describe("containers info", () => {
 				"*/applications/asdf",
 				async ({ request }) => {
 					expect(await request.text()).toEqual("");
-					return HttpResponse.json(MOCK_APPLICATION_SINGLE);
+					return HttpResponse.json(
+						`{"success": true, "result": ${MOCK_APPLICATION_SINGLE}}`
+					);
 				},
 				{ once: true }
 			)

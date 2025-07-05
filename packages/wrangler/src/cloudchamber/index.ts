@@ -1,18 +1,18 @@
 import { applyCommand, applyCommandOptionalYargs } from "./apply";
 import { buildCommand, buildYargs, pushCommand, pushYargs } from "./build";
-import { handleFailure } from "./common";
+import { cloudchamberScope, handleFailure } from "./common";
 import { createCommand, createCommandOptionalYargs } from "./create";
 import { curlCommand, yargsCurl } from "./curl";
 import { deleteCommand, deleteCommandOptionalYargs } from "./delete";
-import { registriesCommand } from "./images/images";
-import { imagesCommand } from "./images/list";
+import { imagesCommand } from "./images/images";
+import { registriesCommand } from "./images/registries";
 import { listCommand, listDeploymentsYargs } from "./list";
 import { modifyCommand, modifyCommandOptionalYargs } from "./modify";
 import { sshCommand } from "./ssh/ssh";
-import type { CommonYargsArgvJSON, CommonYargsOptions } from "../yargs-types";
+import type { CommonYargsArgv, CommonYargsOptions } from "../yargs-types";
 import type { CommandModule } from "yargs";
 
-function internalCommands(args: CommonYargsArgvJSON) {
+function internalCommands(args: CommonYargsArgv) {
 	try {
 		// Add dynamically an internal module that we can attach internal commands
 		// eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -24,7 +24,7 @@ function internalCommands(args: CommonYargsArgvJSON) {
 }
 
 export const cloudchamber = (
-	yargs: CommonYargsArgvJSON,
+	yargs: CommonYargsArgv,
 	subHelp: CommandModule<CommonYargsOptions, CommonYargsOptions>
 ) => {
 	yargs = internalCommands(yargs);
@@ -33,59 +33,99 @@ export const cloudchamber = (
 			"delete [deploymentId]",
 			"Delete an existing deployment that is running in the Cloudflare edge",
 			(args) => deleteCommandOptionalYargs(args),
-			(args) => handleFailure(deleteCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber delete`,
+					deleteCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command(
 			"create",
 			"Create a new deployment",
 			(args) => createCommandOptionalYargs(args),
-			(args) => handleFailure(createCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber create`,
+					createCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command(
 			"list [deploymentIdPrefix]",
 			"List and view status of deployments",
 			(args) => listDeploymentsYargs(args),
-			(args) => handleFailure(listCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber list`,
+					listCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command(
 			"modify [deploymentId]",
 			"Modify an existing deployment",
 			(args) => modifyCommandOptionalYargs(args),
-			(args) => handleFailure(modifyCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber modify`,
+					modifyCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command("ssh", "Manage the ssh keys of your account", (args) =>
-			sshCommand(args).command(subHelp)
+			sshCommand(args, cloudchamberScope).command(subHelp)
 		)
 		.command("registries", "Configure registries via Cloudchamber", (args) =>
-			registriesCommand(args).command(subHelp)
+			registriesCommand(args, cloudchamberScope).command(subHelp)
 		)
 		.command(
 			"curl <path>",
-			"send a request to an arbitrary cloudchamber endpoint",
+			"Send a request to an arbitrary Cloudchamber endpoint",
 			(args) => yargsCurl(args),
-			(args) => handleFailure(curlCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber curl`,
+					curlCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command(
 			"apply",
-			"apply the changes in the container applications to deploy",
+			"Apply the changes in the container applications to deploy",
 			(args) => applyCommandOptionalYargs(args),
-			(args) => handleFailure(applyCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber apply`,
+					applyCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command(
 			"build [PATH]",
-			"build a dockerfile",
+			"Build a container image",
 			(args) => buildYargs(args),
-			(args) => handleFailure(buildCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber build`,
+					buildCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command(
 			"push [TAG]",
-			"push a tagged image to a Cloudflare managed registry, which is automatically integrated with your account",
+			"Push a tagged image to a Cloudflare managed registry",
 			(args) => pushYargs(args),
-			(args) => handleFailure(pushCommand)(args)
+			(args) =>
+				handleFailure(
+					`wrangler cloudchamber push`,
+					pushCommand,
+					cloudchamberScope
+				)(args)
 		)
 		.command(
 			"images",
-			"perform operations on images in your clouchamber registry",
-			(args) => imagesCommand(args).command(subHelp)
+			"Perform operations on images in your Cloudchamber registry",
+			(args) => imagesCommand(args, cloudchamberScope).command(subHelp)
 		);
 };

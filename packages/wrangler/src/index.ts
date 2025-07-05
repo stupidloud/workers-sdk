@@ -1,5 +1,7 @@
+import assert from "node:assert";
 import os from "node:os";
 import { setTimeout } from "node:timers/promises";
+import { ApiError } from "@cloudflare/containers-shared";
 import chalk from "chalk";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
 import makeCLI from "yargs";
@@ -62,6 +64,11 @@ import {
 	JsonFriendlyFatalError,
 	UserError,
 } from "./errors";
+import {
+	helloWorldGetCommand,
+	helloWorldNamespace,
+	helloWorldSetCommand,
+} from "./hello-world";
 import { hyperdriveCreateCommand } from "./hyperdrive/create";
 import { hyperdriveDeleteCommand } from "./hyperdrive/delete";
 import { hyperdriveGetCommand } from "./hyperdrive/get";
@@ -308,7 +315,6 @@ import { workflowsInstancesTerminateAllCommand } from "./workflows/commands/inst
 import { workflowsListCommand } from "./workflows/commands/list";
 import { workflowsTriggerCommand } from "./workflows/commands/trigger";
 import { printWranglerBanner } from "./wrangler-banner";
-import { asJson } from "./yargs-types";
 import type { ComplianceConfig } from "./environment-variables/misc-variables";
 import type { LoggerLevel } from "./logger";
 import type { CommonYargsArgv, SubHelp } from "./yargs-types";
@@ -422,17 +428,17 @@ export function createCLIParser(argv: string[]) {
 
 			return true;
 		})
+		.option("experimental-remote-bindings", {
+			describe: `Experimental: Enable Remote Bindings`,
+			type: "boolean",
+			hidden: true,
+			alias: ["x-remote-bindings"],
+		})
 		.option("experimental-provision", {
 			describe: `Experimental: Enable automatic resource provisioning`,
 			type: "boolean",
 			hidden: true,
 			alias: ["x-provision"],
-		})
-		.option("experimental-mixed-mode", {
-			describe: `Experimental: Enable Mixed Mode`,
-			type: "boolean",
-			hidden: true,
-			alias: ["x-mixed-mode"],
 		})
 		.epilogue(
 			`Please report any issues to ${chalk.hex("#3B818D")(
@@ -1142,12 +1148,12 @@ export function createCLIParser(argv: string[]) {
 
 	// cloudchamber
 	wrangler.command("cloudchamber", false, (cloudchamberArgs) => {
-		return cloudchamber(asJson(cloudchamberArgs.command(subHelp)), subHelp);
+		return cloudchamber(cloudchamberArgs.command(subHelp), subHelp);
 	});
 
 	// containers
 	wrangler.command("containers", false, (containersArgs) => {
-		return containers(asJson(containersArgs.command(subHelp)), subHelp);
+		return containers(containersArgs.command(subHelp), subHelp);
 	});
 
 	// [PRIVATE BETA] pubsub
@@ -1331,6 +1337,19 @@ export function createCLIParser(argv: string[]) {
 	]);
 	registry.registerNamespace("pipelines");
 
+	registry.define([
+		{ command: "wrangler hello-world", definition: helloWorldNamespace },
+		{
+			command: "wrangler hello-world get",
+			definition: helloWorldGetCommand,
+		},
+		{
+			command: "wrangler hello-world set",
+			definition: helloWorldSetCommand,
+		},
+	]);
+	registry.registerNamespace("hello-world");
+
 	/******************** CMD GROUP ***********************/
 
 	registry.define([
@@ -1491,10 +1510,22 @@ export async function main(argv: string[]): Promise<void> {
 			// The workaround is to re-run the parsing with an additional `--help` flag, which will result in the correct help message being displayed.
 			// The `wrangler` object is "frozen"; we cannot reuse that with different args, so we must create a new CLI parser to generate the help message.
 			await createCLIParser([...argv, "--help"]).parse();
-		} else if (isAuthenticationError(e)) {
+		} else if (
+			isAuthenticationError(e) ||
+			// Is this a Containers/Cloudchamber-based auth error?
+			// This is different because it uses a custom OpenAPI-based generated client
+			(e instanceof UserError &&
+				e.cause instanceof ApiError &&
+				e.cause.status === 403)
+		) {
 			mayReport = false;
 			errorType = "AuthenticationError";
-			logger.log(formatMessage(e));
+			if (e.cause instanceof ApiError) {
+				logger.error(e.cause);
+			} else {
+				assert(isAuthenticationError(e));
+				logger.log(formatMessage(e));
+			}
 			const envAuth = getAuthFromEnv();
 			if (envAuth !== undefined && "apiToken" in envAuth) {
 				const message =

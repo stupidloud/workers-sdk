@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { generatePreviewAlias } from "../../versions/upload";
+import { makeApiRequestAsserter } from "../helpers/assert-request";
 import { mockAccountId, mockApiToken } from "../helpers/mock-account-id";
 import { mockConsoleMethods } from "../helpers/mock-console";
 import { useMockIsTTY } from "../helpers/mock-istty";
@@ -21,13 +22,14 @@ describe("versions upload", () => {
 	mockApiToken();
 	const { setIsTTY } = useMockIsTTY();
 	const std = mockConsoleMethods();
+	const assertApiRequest = makeApiRequestAsserter(std);
 
 	function mockGetScript() {
 		msw.use(
 			http.get(
 				`*/accounts/:accountId/workers/services/:scriptName`,
 				({ params }) => {
-					expect(params.scriptName).toEqual("test-name");
+					expect(params.scriptName).toMatch(/^test-name(-test)?/);
 
 					return HttpResponse.json(
 						createFetchResult({
@@ -66,7 +68,7 @@ describe("versions upload", () => {
 						return HttpResponse.error();
 					}
 
-					expect(params.scriptName).toEqual("test-name");
+					expect(params.scriptName).toMatch(/^test-name(-test)?/);
 
 					return HttpResponse.json(
 						createFetchResult({
@@ -210,6 +212,127 @@ describe("versions upload", () => {
 
 		expect(std.info).toContain("Retrying API call after error...");
 	});
+
+	test("correctly detects python workers", async () => {
+		mockGetScript();
+		mockUploadVersion(true);
+		mockGetWorkerSubdomain({ enabled: true, previews_enabled: true });
+		mockSubDomainRequest();
+
+		// Setup
+		writeWranglerConfig({
+			name: "test-name",
+			main: "./index.py",
+			compatibility_flags: ["python_workers"],
+		});
+		writeWorkerSource({ type: "python", format: "py" });
+		setIsTTY(false);
+
+		await runWrangler("versions upload");
+
+		assertApiRequest(/.*?workers\/scripts\/test-name\/versions/, {
+			method: "POST",
+			// Make sure the main module (index.py) has a text/x-python content type
+			body: /Content-Disposition: form-data; name="index.py"; filename="index.py"\nContent-Type: text\/x-python/,
+		});
+
+		expect(std.out).toMatchInlineSnapshot(`
+			"┌─┬─┬─┐
+			│ Name │ Type │ Size │
+			├─┼─┼─┤
+			│ another.py │ python │ xx KiB │
+			├─┼─┼─┤
+			│ Total (1 module) │ │ xx KiB │
+			└─┴─┴─┘
+			Total Upload: xx KiB / gzip: xx KiB
+			Worker Startup Time: 500 ms
+			Uploaded test-name (TIMINGS)
+			Worker Version ID: 51e4886e-2db7-4900-8d38-fbfecfeab993
+			Version Preview URL: https://51e4886e-test-name.test-sub-domain.workers.dev"
+		`);
+	});
+
+	describe("multi-env warning", () => {
+		it("should warn if the wrangler config contains environments but none was specified in the command", async () => {
+			mockGetScript();
+			mockUploadVersion(true);
+			mockGetWorkerSubdomain({ enabled: true, previews_enabled: false });
+
+			// Setup
+			writeWranglerConfig({
+				name: "test-name",
+				main: "./index.js",
+				env: {
+					test: {},
+				},
+			});
+			writeWorkerSource();
+			setIsTTY(false);
+
+			const result = runWrangler("versions upload");
+
+			await expect(result).resolves.toBeUndefined();
+
+			expect(std.warn).toMatchInlineSnapshot(`
+				"[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mMultiple environments are defined in the Wrangler configuration file, but no target environment was specified for the versions upload command.[0m
+
+				  To avoid unintentional changes to the wrong environment, it is recommended to explicitly specify
+				  the target environment using the \`-e|--env\` flag.
+				  If your intention is to use the top-level environment of your configuration simply pass an empty
+				  string to the flag to target such environment. For example \`--env=\\"\\"\`.
+
+				"
+			`);
+		});
+
+		it("should not warn if the wrangler config contains environments and one was specified in the command", async () => {
+			mockGetScript();
+			mockUploadVersion(true);
+			mockGetWorkerSubdomain({
+				enabled: true,
+				previews_enabled: false,
+				legacyEnv: true,
+				env: "test",
+			});
+
+			// Setup
+			writeWranglerConfig({
+				name: "test-name",
+				main: "./index.js",
+				env: {
+					test: {},
+				},
+			});
+			writeWorkerSource();
+			setIsTTY(false);
+
+			const result = runWrangler("versions upload -e test");
+
+			await expect(result).resolves.toBeUndefined();
+
+			expect(std.warn).toMatchInlineSnapshot(`""`);
+		});
+
+		it("should not warn if the wrangler config doesn't contain environments and none was specified in the command", async () => {
+			mockGetScript();
+			mockUploadVersion(true);
+			mockGetWorkerSubdomain({ enabled: true, previews_enabled: false });
+
+			// Setup
+			writeWranglerConfig({
+				name: "test-name",
+				main: "./index.js",
+			});
+			writeWorkerSource();
+			setIsTTY(false);
+
+			const result = runWrangler("versions upload");
+
+			await expect(result).resolves.toBeUndefined();
+
+			expect(std.warn).toMatchInlineSnapshot(`""`);
+		});
+	});
 });
 
 const mockExecSync = vi.fn();
@@ -279,5 +402,43 @@ describe("generatePreviewAlias", () => {
 
 		const result = generatePreviewAlias("testscript");
 		expect(result).toBe("head-feature-work");
+	});
+
+	it("Generates from workers ci branch", () => {
+		vi.stubEnv("WORKERS_CI_BRANCH", "some/debug-branch");
+
+		const result = generatePreviewAlias("testscript");
+		expect(result).toBe("some-debug-branch");
+	});
+
+	it("Does not produce an alias from long workers ci branch name", () => {
+		vi.stubEnv(
+			"WORKERS_CI_BRANCH",
+			"some/really-really-really-really-really-long-branch-name"
+		);
+
+		const result = generatePreviewAlias("testscript");
+		expect(result).toBeUndefined();
+	});
+
+	it("Strips leading dashes from branch name", () => {
+		vi.stubEnv("WORKERS_CI_BRANCH", "-some-branch-name");
+
+		const result = generatePreviewAlias("testscript");
+		expect(result).toBe("some-branch-name");
+	});
+
+	it("Removes concurrent dashes from branch name", () => {
+		vi.stubEnv("WORKERS_CI_BRANCH", "some----branch-----name");
+
+		const result = generatePreviewAlias("testscript");
+		expect(result).toBe("some-branch-name");
+	});
+
+	it("Does not produce an alias with leading numbers", () => {
+		vi.stubEnv("WORKERS_CI_BRANCH", "0AF0ED");
+
+		const result = generatePreviewAlias("testscript");
+		expect(result).toBeUndefined();
 	});
 });
